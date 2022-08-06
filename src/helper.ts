@@ -1,12 +1,12 @@
 export const BARRAGERCLASS = '__barrager-item-style'
 export const LAYERCLASS = '__barrager-layer-container'
 
-export const initAnimate = (): void => {
+export const initCSS = (): void => {
   let style = document.createElement('style')
   const animateClass = 'BARRAGER_ANIMATE'
   style.classList.add(animateClass)
 
-  const bulletContainer = /*css*/ `
+  const Container = /*css*/ `
   .${BARRAGERCLASS} {
 		cursor: pointer;
 		position: absolute;
@@ -18,14 +18,14 @@ export const initAnimate = (): void => {
     will-change: transform;
 	}`
 
-  const bulletTempContainer = /*css*/ `
+  const Layer = /*css*/ `
 	.${LAYERCLASS} {
 		position: absolute;
 		right: 9999px;
 		visibility: hidden;
 	}`
 
-  style.innerHTML = bulletContainer + bulletTempContainer
+  style.innerHTML = Container + Layer
   document.head.appendChild(style)
 }
 

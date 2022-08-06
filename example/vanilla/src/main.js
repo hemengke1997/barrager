@@ -71,7 +71,6 @@ const danmuTest = {
     this.dom.sendDanmu.addEventListener('click', () => {
       const value = this.dom.dInput.value
       const escapeHTML = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/\'/g, '&#39;').replace(/\//g, '&#x2F;')
-      console.log('escapeHTML--->', escapeHTML)
       if (value) {
         const danmu = `<span class="danmu-item" style="color: red;">${escapeHTML}</span>`
         this.screen.push(

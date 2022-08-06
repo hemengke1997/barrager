@@ -1,5 +1,5 @@
 import { name } from '../package.json'
-import { BARRAGERCLASS, eventEntrust, getContainer, getRandom, initAnimate, LAYERCLASS } from './helper'
+import { BARRAGERCLASS, eventEntrust, getContainer, getRandom, initCSS, LAYERCLASS } from './helper'
 
 /**
  * 初始化弹幕容器元素
@@ -18,11 +18,11 @@ type TrackStatus = 'running' | 'idle'
  */
 export type BarragerOptions = {
   trackHeight?: number
-  tractArray?: any[]
+  tractArray?: { speed: number }[]
   pauseOnHover?: boolean
   pauseOnClick?: boolean
-  onStart?: any
-  onEnd?: any
+  onStart?: () => void
+  onEnd?: () => void
   duration?: string
   speed?: number
 }
@@ -39,7 +39,7 @@ const defaultOptions: BarragerOptions = {
   onStart: null,
   onEnd: null,
   duration: '10s',
-  tractArray: [{ speed: 150 }, { speed: 130 }],
+  tractArray: [{ speed: 100 }],
   speed: 100,
 }
 
@@ -48,16 +48,16 @@ export class Barrager {
   /**
    * 弹幕容器
    */
-  private container: ContainerType
-  private containerRect: DOMRect
+  container: ContainerType
+  containerRect: DOMRect
   /**
    * 弹幕配置
    */
-  private options: BarragerOptions
+  options: BarragerOptions
   /**
    * 弹幕轨道
    */
-  private tracks: TrackStatus[]
+  tracks: TrackStatus[]
   /**
    * 弹幕临时容器层
    */
@@ -80,7 +80,7 @@ export class Barrager {
   userBarragers: {
     dom: string
     options: BarragerOptions
-  }[] = [] // 用户自己发送的的弹幕存储列表
+  }[] = []
   /**
    * 暂停队列
    */
@@ -128,7 +128,7 @@ export class Barrager {
       this.container.style.position = 'relative'
       this.container.style.overflow = 'hidden'
     }
-    initAnimate()
+    initCSS()
   }
 
   private initLayer() {
@@ -206,15 +206,19 @@ export class Barrager {
     }
 
     if (readyIdxs.length) {
+      // 优先取
       const random = getRandom(0, readyIdxs.length - 1)
-      index = readyIdxs[random]
+      index = readyIdxs[0]
       this.tracks[index] = 'running'
       return index
     }
+
     for (let i = 0; i < this.barrager.length; i++) {
       const len = this.barrager[i].length
+
       if (len) {
         const b = this.barrager[i][len - 1]
+        console.log(this.barrager[i], this.barrager)
         if (b && this.checkTrack(b)) {
           index = i
           break
@@ -233,7 +237,7 @@ export class Barrager {
 
     const containerWidth = this.containerRect.width
 
-    if (this.options.speed || this.options.tractArray.length) {
+    if (this.options.speed || this.options.tractArray?.length) {
       if (barragerRect.right < this.containerRect.right) return true
     } else {
       const duration = +_barrager.dataset.duration
