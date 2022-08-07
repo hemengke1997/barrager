@@ -21,7 +21,14 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/debounce": "^1.2.1",
     "tsup": "^6.2.1",
     "typescript": "^4.7.4"
+  },
+  "dependencies": {
+    "debounce": "^1.2.1",
+    "intersection-observer": "^0.12.2",
+    "nanoid": "^4.0.0",
+    "resize-observer": "^1.0.4"
   }
 }

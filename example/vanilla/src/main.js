@@ -17,6 +17,8 @@ const danmuList = [
 
 const getRandom = (min, max) => parseInt(Math.random() * (max - min + 1)) + min
 
+let v = 1
+
 const danmuTest = {
   screen: null,
   handler: null,
@@ -32,7 +34,6 @@ const danmuTest = {
     this.eventInit()
     this.screen = new Barrager('.screen', {
       trackHeight: 35,
-      speed: undefined,
       pauseOnClick: true,
       pauseOnHover: true,
     })
@@ -69,21 +70,26 @@ const danmuTest = {
     })
 
     this.dom.sendDanmu.addEventListener('click', () => {
-      const value = this.dom.dInput.value
-      const escapeHTML = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/\'/g, '&#39;').replace(/\//g, '&#x2F;')
-      if (value) {
-        const danmu = `<span class="danmu-item" style="color: red;">${escapeHTML}</span>`
-        this.screen.push(
-          danmu,
-          {
-            onStart: (id, danmu) => {},
-            onEnd: (id, danmu) => {},
-          },
-          true
-        )
-      } else {
-        alert('请输入要发送的弹幕')
-      }
+      // const value = this.dom.dInput.value
+      // const escapeHTML = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/\'/g, '&#39;').replace(/\//g, '&#x2F;')
+      // if (value) {
+      //   const danmu = `<span class="danmu-item" style="color: red;">${escapeHTML}</span>`
+      //   this.screen.push(
+      //     danmu,
+      //     {
+      //       onStart: (id, danmu) => {},
+      //       onEnd: (id, danmu) => {},
+      //     },
+      //     true
+      //   )
+      // } else {
+      //   alert('请输入要发送的弹幕')
+      // }
+      this.screen.push(`----------------------${v}`, {
+        onStart: (id, danmu) => {},
+        onEnd: (id, danmu) => {},
+      })
+      v++
     })
 
     this.dom.pauseAll.addEventListener('click', () => {

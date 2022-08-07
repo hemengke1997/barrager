@@ -33,7 +33,6 @@ export const getRandom = (min: number, max: number): number => parseInt(String(M
 
 export const getContainer = (): HTMLElement => {
   const bc = document.createElement('div')
-  bc.id = String(Date.now())
   bc.classList.add(BARRAGERCLASS)
   return bc
 }

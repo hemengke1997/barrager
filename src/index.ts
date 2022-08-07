@@ -1,5 +1,10 @@
 import { name } from '../package.json'
-import { BARRAGERCLASS, eventEntrust, getContainer, getRandom, initCSS, LAYERCLASS } from './helper'
+import { BARRAGERCLASS, eventEntrust, getContainer, initCSS, LAYERCLASS } from './helper'
+import { ResizeObserver } from 'resize-observer'
+import debounce from 'debounce'
+import { nanoid } from 'nanoid'
+
+const GAP = '16px'
 
 /**
  * 初始化弹幕容器元素
@@ -12,6 +17,15 @@ type ElType = string | HTMLElement
 type ContainerType = HTMLElement
 
 type TrackStatus = 'running' | 'idle'
+
+type BarragerType = {
+  DOMString: string
+  container: HTMLElement
+  options: BarragerOptions
+  trackIndex: number
+  id: string
+  status: 'hide' | 'show'
+}
 
 /**
  * 弹幕配置
@@ -65,20 +79,16 @@ export class Barrager {
   /**
    * 弹幕存储器
    */
-  barrager: HTMLElement[][]
+  barragerArray: BarragerType[][]
   /**
    * 全部暂停
    */
   isAllPaused: boolean
   /**
-   * 当前弹幕信息
-   */
-  barragerInfo: { width?: number; [k: string]: any }
-  /**
    * 用户输入的弹幕
    */
   userBarragers: {
-    dom: string
+    DOMString: string
     options: BarragerOptions
   }[] = []
   /**
@@ -101,6 +111,7 @@ export class Barrager {
     this.initOptions()
     this.initLayer()
     this.addExtraEvent()
+    this.bindResize()
   }
 
   initContainer() {
@@ -116,12 +127,16 @@ export class Barrager {
     }
   }
 
+  setContainerRect() {
+    this.containerRect = this.container.getBoundingClientRect()
+  }
+
   initOptions() {
     const { trackHeight } = this.options
-    this.containerRect = this.container.getBoundingClientRect()
+    this.setContainerRect()
     const trackCount = trackHeight ? Math.floor(this.containerRect.height / trackHeight) : this.containerRect.height
     this.tracks = new Array<TrackStatus>(trackCount).fill('idle')
-    this.barrager = new Array(trackCount).fill([])
+    this.barragerArray = new Array(trackCount).fill([])
 
     const { position } = getComputedStyle(this.container)
     if (position === 'static') {
@@ -137,6 +152,15 @@ export class Barrager {
     document.body.appendChild(this.layer)
   }
 
+  private bindResize() {
+    const obCallback: ResizeObserverCallback = (entries) => {
+      this.containerRect = entries[0].target.getBoundingClientRect()
+    }
+
+    const ro = new ResizeObserver(debounce(obCallback, 200))
+    ro.observe(this.container)
+  }
+
   push(barragerDOM: string, opts: BarragerOptions = {}, priority: 'high' | 'normal' = 'normal') {
     const options = {
       ...this.options,
@@ -147,20 +171,73 @@ export class Barrager {
 
     if (idleTrackIndex === -1) {
       if (priority === 'high') {
-        this.userBarragers.push({ dom: barragerDOM, options })
+        this.userBarragers.push({ DOMString: barragerDOM, options })
       }
     } else {
       const barragerContainer = this.getBarragerItem(barragerDOM, options, idleTrackIndex)
-      if (this.barrager[idleTrackIndex].length) {
-        this.barrager[idleTrackIndex].push(barragerContainer)
+
+      const id = nanoid()
+
+      barragerContainer.dataset.id = id
+
+      const currentBarrager = {
+        container: barragerContainer,
+        trackIndex: idleTrackIndex,
+        DOMString: barragerDOM,
+        options,
+        id,
+        status: 'hide',
+      } as BarragerType
+
+      this.listenTrackAvailable(currentBarrager, this.container)
+
+      if (this.barragerArray[idleTrackIndex].length) {
+        this.barragerArray[idleTrackIndex].push(currentBarrager)
       } else {
-        this.barrager[idleTrackIndex] = [barragerContainer]
+        this.barragerArray[idleTrackIndex] = [currentBarrager]
       }
-      this.render(barragerContainer, idleTrackIndex)
-      this.addEvent(barragerContainer, idleTrackIndex, options)
-      return barragerContainer.id
+      this.render(currentBarrager, idleTrackIndex)
+      this.addEvent(currentBarrager, idleTrackIndex, options)
+      return currentBarrager
     }
     return null
+  }
+
+  private listenTrackAvailable(barrager: BarragerType, container: HTMLElement) {
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          const t = this.barragerArray[barrager.trackIndex]
+          if (t[t.length - 1].id === barrager.id) {
+            this.tracks[barrager.trackIndex] = 'idle'
+          }
+          barrager.status = 'show'
+          io.disconnect()
+        } else {
+          barrager.status = 'hide'
+        }
+      },
+      {
+        root: container,
+        threshold: 1,
+        rootMargin: `0px -${GAP} 0px 0px`,
+      }
+    )
+
+    io.observe(barrager.container)
+  }
+
+  computeDuration(options: BarragerOptions, idleTrackIndex: number, left: number) {
+    let duration = 0
+    const speed = options.tractArray?.[idleTrackIndex]?.speed || options.speed
+
+    if (speed) {
+      duration = left / speed
+    } else {
+      duration = +options.duration.slice(0, -1)
+    }
+
+    return duration
   }
 
   private getBarragerItem(barragerDOM: string, options: BarragerOptions, idleTrackIndex: number) {
@@ -169,20 +246,14 @@ export class Barrager {
     bc.innerHTML = barragerDOM
 
     this.layer.replaceChildren(bc)
-    this.barragerInfo = { width: bc.offsetWidth }
 
-    let duration = 0
-    const speed = options.tractArray?.[idleTrackIndex]?.speed || options.speed
-    if (speed) {
-      duration = (this.containerRect.width + this.barragerInfo.width) / speed
-    } else {
-      duration = +options.duration.slice(0, -1)
-    }
-    bc.style.left = `${this.containerRect.width + bc.clientWidth}px`
+    const duration = this.computeDuration(options, idleTrackIndex, this.containerRect.width + bc.offsetWidth)
+
+    bc.style.left = `${this.containerRect.width}px`
     bc.style.transition = `transform ${duration}s linear 0s`
 
     const run = () => {
-      bc.style.transform = `translateX(-${this.containerRect.width + 2 * bc.clientWidth}px) translateY(0px) translateZ(0px)`
+      bc.style.transform = `translateX(-${this.containerRect.width + bc.offsetWidth}px) translateY(0px) translateZ(0px)`
     }
 
     if (requestAnimationFrame) {
@@ -206,107 +277,106 @@ export class Barrager {
     }
 
     if (readyIdxs.length) {
-      // 优先取
-      const random = getRandom(0, readyIdxs.length - 1)
       index = readyIdxs[0]
       this.tracks[index] = 'running'
       return index
     }
 
-    for (let i = 0; i < this.barrager.length; i++) {
-      const len = this.barrager[i].length
+    // TODO: 当全部轨道运行时，实时弹幕如何处理？
 
-      if (len) {
-        const b = this.barrager[i][len - 1]
-        console.log(this.barrager[i], this.barrager)
-        if (b && this.checkTrack(b)) {
-          index = i
-          break
-        }
-      }
-    }
     return index
   }
 
-  private checkTrack(_barrager: HTMLElement): boolean {
-    const barragerRect = _barrager.getBoundingClientRect()
+  // private isTrackAvailable(_barrager: BarragerType): boolean {
+  //   return _barrager.status === 'show'
+  // }
 
-    if (barragerRect.right > this.containerRect.right) {
-      return false
-    }
+  // private checkTrack(_barrager: BarragerType): boolean {
+  //   const { container, status } = _barrager
+  //   const barragerRect = container.getBoundingClientRect()
 
-    const containerWidth = this.containerRect.width
+  //   if (status === 'hide') {
+  //     return false
+  //   } else if (status === 'show') {
+  //     return true
+  //   }
 
-    if (this.options.speed || this.options.tractArray?.length) {
-      if (barragerRect.right < this.containerRect.right) return true
-    } else {
-      const duration = +_barrager.dataset.duration
+  //   if (this.options.speed || this.options.tractArray?.length) {
+  //     // if (barragerRect.right < this.containerRect.right) return true
+  //   } else {
+  //     const duration = +container.dataset.duration
 
-      const v1 = (containerWidth + barragerRect.width) / duration
+  //     const v1 = (this.containerRect.width + barragerRect.width) / duration
 
-      const s2 = containerWidth + this.barragerInfo.width
-      const t2 = duration
-      const v2 = s2 / t2
+  //     const s2 = this.containerRect.width + barragerRect.width
+  //     const t2 = duration
+  //     const v2 = s2 / t2
 
-      if (v2 <= v1) {
-        return true
-      } else {
-        const t1 = (barragerRect.right - this.containerRect.left) / v1
-        const t2 = containerWidth / v2
-        if (t2 < t1) {
-          return false
-        }
-      }
-    }
-    return true
-  }
+  //     if (v2 <= v1) {
+  //       return true
+  //     } else {
+  //       const t1 = (barragerRect.right - this.containerRect.left) / v1
+  //       const t2 = this.containerRect.width / v2
+  //       if (t2 < t1) {
+  //         return false
+  //       }
+  //     }
+  //   }
+  //   return true
+  // }
 
-  private render = (container: HTMLElement, track: number) => {
-    // if (this.isAllPaused) return
+  private render = (barrager: BarragerType, track: number) => {
+    const { container } = barrager
     container.dataset.track = track + ''
     container.style.top = track * this.options.trackHeight + 'px'
     this.container.appendChild(container)
 
     if (this.userBarragers.length) {
       const obj = this.userBarragers.shift()
-      this.push(obj.dom, obj.options, 'high')
+      this.push(obj.DOMString, obj.options, 'high')
     }
   }
 
-  private addEvent(bc: HTMLElement, idleTrackIndex: number, options: BarragerOptions) {
+  private addEvent(barrager: BarragerType, idleTrackIndex: number, options: BarragerOptions) {
     const { onStart, onEnd } = options
 
-    bc.addEventListener('transitionstart', () => {
-      if (onStart) onStart.call(window, bc.id, this)
+    const { container, id } = barrager
+
+    container.addEventListener('transitionstart', () => {
+      if (onStart) onStart.call(window, barrager, this)
     })
 
-    bc.addEventListener('transitionend', () => {
-      if (onEnd) onEnd.call(window, bc.id, this)
-      this.barrager[idleTrackIndex] = this.barrager[idleTrackIndex].filter((v) => v.id !== bc.id)
+    container.addEventListener('transitionend', () => {
+      if (onEnd) onEnd.call(window, barrager, this)
+      this.barragerArray[idleTrackIndex] = this.barragerArray[idleTrackIndex].filter((v) => v.id !== id)
 
-      if (!this.barrager[idleTrackIndex].length) {
-        this.tracks[idleTrackIndex] = 'idle'
-      }
-      bc.remove()
+      // TODO: DOM reuse
+      container.remove()
     })
   }
 
   public getBarragerList() {
-    return this.barrager.reduce((acc, cur) => [...cur, ...acc], [])
+    return this.barragerArray.reduce((acc, cur) => [...cur, ...acc], [])
   }
-  private toggleAnimateStatus = (el: HTMLElement, status = 'paused') => {
-    // if (el) {
-    //   if (status === 'running') {
-    //     el.style.animationPlayState = 'running'
-    //     el.style.zIndex = '0'
-    //     el.classList.remove('barrager-item-paused')
-    //   } else {
-    //     el.style.animationPlayState = 'paused'
-    //     el.style.zIndex = '99999'
-    //     el.classList.add('barrager-item-paused')
-    //   }
-    //   return
-    // }
+  private toggleTransformStatus = (el: HTMLElement, status: 'running' | 'paused') => {
+    if (el) {
+      const elRect = el.getBoundingClientRect()
+      const w = this.containerRect.width
+      const x = Math.abs(w - (elRect.left - this.containerRect.left))
+      if (status === 'running') {
+        const i = parseInt(el.dataset.track)
+        const id = el.dataset.id
+        const b = this.barragerArray[i].find((item) => item.id === id)
+        const duration = this.computeDuration(b.options, i, Math.abs(this.containerRect.left - elRect.left) + elRect.width)
+        el.dataset.duration = duration + ''
+        el.style.transform = `translateX(-${this.containerRect.width + el.offsetWidth}px) translateY(0px) translateZ(0px)`
+        el.style.transition = `transform ${duration}s linear 0s`
+      } else {
+        el.style.transition = `transform 0s linear 0s`
+        el.style.transform = `translateX(-${x}px) translateY(0px) translateZ(0px)`
+      }
+      return
+    }
     // if (this.pauseArray.length && status == 'paused') return
     // this.pauseArray = this.getBarragerList()
     // this.pauseArray.forEach((item) => {
@@ -317,13 +387,13 @@ export class Barrager {
 
   // 暂停
   public pause(el = null) {
-    this.toggleAnimateStatus(el, 'paused')
+    this.toggleTransformStatus(el, 'paused')
     if (el === null) {
       this.isAllPaused = true
     }
   }
   public resume(el = null) {
-    this.toggleAnimateStatus(el, 'running')
+    this.toggleTransformStatus(el, 'running')
     this.isAllPaused = false
   }
 
@@ -333,21 +403,21 @@ export class Barrager {
         let currStatus = el.style.animationPlayState
         if (currStatus == 'paused' && el.dataset.clicked) {
           el.dataset.clicked = ''
-          this.toggleAnimateStatus(el, 'running')
+          this.toggleTransformStatus(el, 'running')
         } else {
           el.dataset.clicked = 'true'
-          this.toggleAnimateStatus(el, 'paused')
+          this.toggleTransformStatus(el, 'paused')
         }
       })
     }
 
     if (this.options.pauseOnHover) {
       eventEntrust(this.container, 'mouseover', BARRAGERCLASS, (el) => {
-        this.toggleAnimateStatus(el, 'paused')
+        this.toggleTransformStatus(el, 'paused')
       })
 
       eventEntrust(this.container, 'mouseout', BARRAGERCLASS, (el) => {
-        this.toggleAnimateStatus(el, 'running')
+        this.toggleTransformStatus(el, 'running')
       })
     }
   }
